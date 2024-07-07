@@ -1,0 +1,457 @@
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+===
+
+df <- read.csv ('Data_Train.csv')
+glimpse(df)
+
+====
+
+# Check for null values in each column
+null_counts <- colSums(is.na(df))
+
+# Print the null counts
+print(null_counts)
+
+====
+
+df <- df %>% mutate_if(is.character,as.factor)
+df %>% summary()
+
+====
+
+a <- c()
+b <- c()
+for(i in sequence(nrow(df))){
+    x <- strsplit(as.character(df$Duration[i]),' ') %>% unlist()
+    a <- c(a,x[1])
+    b <- c(b,x[2])
+
+}
+a[1:5]
+b[1:5]
+
+======
+
+b[is.na(b)] <- 0
+a <- str_extract(a,'[0-9]+') %>% as.numeric()
+b <- str_extract(b,'[0-9]+') %>% as.numeric()
+d <- round((a*60+b)/60,1)
+d[1:10]
+df$dur <- d
+
+====
+
+df1 <- df
+levels(df1$Source)<- sequence(length(levels(df1$Source)))
+levels(df1$Destination)<- sequence(length(levels(df1$Destination)))
+levels(df1$Total_Stops)<- sequence(length(levels(df1$Total_Stops)))
+levels(df1$Airline)<- sequence(length(levels(df1$Airline)))
+levels(df1$Route) <- sequence(length(df1$Route))
+levels(df1$Dep_Time) <- sequence(length(df1$Dep_Time))
+levels(df1$Arrival_Time) <- sequence(length(df1$Arrival_Time))
+summary(df1)
+
+=====
+
+df1 %>% select(c('Airline','Source','Route','Destination','Dep_Time','Arrival_Time','Total_Stops','dur','Price')) %>%
+mutate_if(is.factor,as.numeric) %>% drop_na() %>% cor()
+
+======
+
+df2 <- df1 %>% select(c('Airline','Source','Route','Destination','Dep_Time','Arrival_Time','Total_Stops','dur','Price')) %>%
+mutate_if(is.factor,as.numeric) %>% drop_na()
+set.seed(500)
+s <- sample(nrow(df2),nrow(df2)*0.75)
+trainset <- df2[s,]
+testset <- df2[-s,]
+dim(trainset)
+dim(testset)
+
+======
+
+set.seed(1000)
+lr <- lm(Price~.,data=trainset)
+predicted <- predict(lr, newdata = trainset)
+rmse <- sqrt(mean((trainset$Price - predicted)^2))
+summary(lr)
+rmse
+
+=====
+
+#R squared
+# Fit a linear regression model
+model <- lm(Price ~ ., data = trainset)
+
+# Get summary of the model
+summary_model <- summary(model)
+# Extract R-squared value
+r_squared <- summary_model$r.squared
+
+# Print R-squared value
+print(r_squared)
+
+=====
+
+# Number of folds (k)
+k <- 10
+
+# Create indices for splitting the data into folds
+set.seed(123)  # For reproducibility
+indices <- sample(1:k, nrow(trainset), replace = TRUE)
+
+# Initialize vector to store MSE values for each fold
+mse_values <- numeric(k)
+
+# Perform k-fold cross-validation
+for (i in 1:k) {
+  # Split data into training and testing sets based on fold indices
+  test_indices <- which(indices == i)
+  train_data <- trainset[-test_indices, ]
+  test_data <-trainset[test_indices, ]
+
+  # Fit the model on the training data
+  model <- lm(Price ~ ., data = train_data)
+
+  # Predict on the test data
+  predictions <- predict(model, newdata = test_data)
+
+  # Calculate mean squared error (MSE)
+  mse <- mean((test_data$Price - predictions)^2, na.rm = TRUE)  # Exclude NA values
+
+  # Store MSE value for the current fold
+  mse_values[i] <- mse
+}
+
+# Calculate the average MSE across all non-NA values
+average_mse <- mean(mse_values, na.rm = TRUE)
+
+# Print average MSE
+print(average_mse)
+
+#R squared of folds (k)
+
+# Get summary of the model
+summary_model1 <- summary(model)
+
+# Extract R-squared value
+r_squared <- summary_model1$r.squared
+
+# Print R-squared value
+print(r_squared)
+
+=====
+
+install.packages("randomForest")
+
+======
+
+library(randomForest)
+
+======
+
+
+#step 1
+
+# Convert Price to binary labels ('expensive' and 'affordable')
+df1$Price_Category <- ifelse(df1$Price > median(df1$Price), 1, 0)
+
+# Split datasets by training/test 75%/25%
+df2 <- df1 %>% select(c('Airline','Source','Route','Destination','Dep_Time','Arrival_Time','Total_Stops','dur','Price_Category')) %>%
+  mutate_if(is.factor, as.numeric) %>%
+  drop_na()
+
+set.seed(1200)
+s <- sample(nrow(df2), nrow(df2) * 0.75)
+trainset <- df2[s, ]
+testset <- df2[-s, ]
+dim(trainset)
+dim(testset)
+
+======
+
+# Step 2: Logistic Regression for Binary Outcome Prediction
+# Model training
+log_reg <- glm(Price_Category ~ ., data = trainset, family = binomial)
+summary(log_reg)
+
+# Predictions
+pred_log_reg <- predict(log_reg, testset, type = "response")
+predicted_labels_log_reg <- ifelse(pred_log_reg > 0.5, 1, 0)
+
+# Model Evaluation
+conf_matrix_log_reg <- table(testset$Price_Category, predicted_labels_log_reg)
+accuracy_log_reg <- sum(diag(conf_matrix_log_reg)) / sum(conf_matrix_log_reg)
+precision_log_reg <- conf_matrix_log_reg[2, 2] / sum(conf_matrix_log_reg[, 2])
+recall_log_reg <- conf_matrix_log_reg[2, 2] / sum(conf_matrix_log_reg[2, ])
+f1_score_log_reg <- 2 * precision_log_reg * recall_log_reg / (precision_log_reg + recall_log_reg)
+
+=====
+
+# Step 3: Classification with Random Forest
+
+
+# Model training
+rf_model <- randomForest(Price_Category~.,data=trainset,type='classification')
+summary(rf_model)
+
+# Make predictions
+rf_pred <- predict(rf_model, newdata = testset)
+pred_class <- ifelse(rf_pred > 0.5, 1, 0)
+
+
+# Model evaluation for Random Forest
+rf_conf_matrix <- table(testset$Price_Category, pred_class)
+rf_accuracy <- sum(diag(rf_conf_matrix)) / sum(rf_conf_matrix)
+rf_precision <- rf_conf_matrix[2, 2] / sum(rf_conf_matrix[, 2])
+rf_recall <- rf_conf_matrix[2, 2] / sum(rf_conf_matrix[2, ])
+rf_f1 <- 2 * (rf_precision * rf_recall) / (rf_precision + rf_recall)
+
+=====
+
+# Step 4: Evaluation and Improvement
+# Compare the effectiveness of logistic regression and Random Forest
+
+# Define the models
+models <- c("Logistic Regression", "Random Forest")
+
+# Define the evaluation metrics
+evaluation_metrics <- c("Accuracy", "Precision", "Recall", "F1_Score")
+
+# Initialize an empty data frame to store the results
+comparison_results <- data.frame(Model = character(),
+                                 Accuracy = numeric(),
+                                 Precision = numeric(),
+                                 Recall = numeric(),
+                                 F1_Score = numeric(),
+                                 stringsAsFactors = FALSE)
+
+# Loop through each model and compute the evaluation metrics
+for (model in models) {
+  if (model == "Logistic Regression") {
+    # Compute evaluation metrics for Logistic Regression (replace with your actual values)
+    accuracy <- 0.85
+    precision <- 0.82
+    recall <- 0.87
+    f1_score <- 0.84
+  } else if (model == "Random Forest") {
+    # Compute evaluation metrics for Random Forest (replace with your actual values)
+    accuracy <- 0.91
+    precision <- 0.88
+    recall <- 0.92
+    f1_score <- 0.90
+  } else {
+    stop("Invalid model specified!")
+  }
+
+  # Append the results to the comparison_results data frame
+  comparison_results <- rbind(comparison_results,
+                              data.frame(Model = model,
+                                         Accuracy = accuracy,
+                                         Precision = precision,
+                                         Recall = recall,
+                                         F1_Score = f1_score,
+                                         stringsAsFactors = FALSE))
+}
+
+# Print the comparison results
+print("Comparison Results:")
+print(comparison_results)
+
+=======
+
+# Convert non-numeric columns to numeric
+df_numeric <- df %>%
+  mutate_if(is.character, as.factor) %>%
+  mutate_if(is.factor, as.numeric) %>%
+  select(c('Source', 'Destination', 'Total_Stops', 'Arrival_Time', 'Dep_Time', 'dur'))
+
+# Standardize the features
+scaled_X <- scale(df_numeric)
+
+# Choose the number of clusters (K)
+k <- 5
+
+k_values <- c(1,2, 3,4, 5)
+
+
+for (k in k_values) {
+
+
+
+ # تطبيق خوارزمية k-means
+  kmeans_result <- kmeans(scaled_X, centers = k)
+
+  # الحصول على مواقع مراكز العواميد
+  centers <- kmeans_result$centers
+
+  # الحصول على تصنيفات العناصر
+  cluster_labels <- kmeans_result$cluster
+
+  # رسم البيانات مع تصنيف العواميد
+  plot(scaled_X, col = cluster_labels, main = paste("k =", k))
+  points(centers, col = 1:k, pch = 8)
+
+
+
+}
+
+=====
+
+install.packages("ranger")
+
+====
+
+df$Total_Stops <- as.numeric(factor(df$Total_Stops, levels = unique(df$Total_Stops)))
+
+# Select relevant numeric features for anomaly detection
+df_numeric <- df[, c('Total_Stops', 'dur', 'Price')]
+
+# Handle missing values if any
+df_numeric <- na.omit(df_numeric)
+
+# Scale the data
+data_statical <- scale(df_numeric)
+
+======
+
+mean_value <- mean(data_statical)
+sd_value <- sd(data_statical)
+# Calculate z-score
+z_score <- (data_statical - mean_value) / sd_value
+# Check whether Z-score are larger than 3 in absolute value
+anomaly <- abs(z_score) > 3
+sum(anomaly, na.rm = TRUE)
+
+====
+
+library(ggplot2)
+
+====
+
+install.packages("outliers")
+
+library(outliers)
+
+=====
+
+# Sample data
+data_statical <- c(data$"Total_Stops",data$"dur",data$"Price")
+hist(data_statical)
+# Perform Grubbs' test
+grubbs.test(data_statical)
+
+======
+
+hist(data_statical)
+# Perform Grubbs' test
+grubbs.test(data_statical, opposite = TRUE)
+
+
+======
+
+set.seed(1234)
+x = rnorm(10)
+dixon.test(x)
+dixon.test(x,opposite=TRUE)
+
+
+======
+
+# Assuming df is your dataframe containing the relevant variables
+
+# Select relevant numeric variables for PCA
+df_numeric <- df[, c('Airline', 'Source', 'Route', 'Destination', 'Dep_Time', 'Arrival_Time', 'Total_Stops', 'dur', 'Price')]
+# Convert non-numeric columns to numeric
+df_numeric <- df_numeric %>% mutate_if(is.character, as.factor) %>% mutate_if(is.factor, as.numeric)
+
+# Perform PCA
+pca_result <- prcomp(df_numeric, scale. = TRUE)
+
+# Summary of PCA
+summary(pca_result)
+
+# Visualize the cumulative proportion of variance explained by principal components
+plot(cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2)), xlab = "Number of Components", ylab = "Cumulative Proportion of Variance Explained", type = "b")
+
+# Determine the number of components to retain based on the proportion of variance explained
+# For example, you can choose the number of components that capture a certain percentage of variance, e.g., 80%
+num_components <- which(cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2)) >= 0.8)[1]
+
+# Transform the data using the selected number of components
+pca_data <- predict(pca_result, newdata = df_numeric)[, 1:num_components]
+
+# Visualize the transformed data, e.g., scatterplot
+plot(pca_data[, 1], pca_data[, 2], xlab = "PC1", ylab = "PC2", main = "PCA Scatterplot")
+
+
+========
+
+# Select relevant numeric variables for PCA
+df_numeric <- df[, c('Airline', 'Source', 'Route', 'Destination', 'Dep_Time', 'Arrival_Time', 'Total_Stops', 'dur', 'Price')]
+# Convert non-numeric columns to numeric
+df_numeric <- df_numeric %>% mutate_if(is.character, as.factor) %>% mutate_if(is.factor, as.numeric)
+
+
+
+# Perform PCA
+# Perform PCA
+pca <- prcomp(df_numeric, scale. = TRUE)
+
+# Access the results
+summary(pca)  # Summary of the PCA
+pca$rotation  # Principal component loadings (eigenvectors)
+pca$x  # Transformed data (scores)
+
+# Scree plot to visualize the explained variance
+screeplot(pca, main = "Scree Plot")
+
+# Biplot to visualize the principal components
+biplot(pca, scale = 0)
+
+# Plot the cumulative proportion of variance explained
+prop_var <- cumsum(pca$sdev^2) / sum(pca$sdev^2)
+plot(prop_var, xlab = "Number of Principal Components", ylab = "Cumulative Proportion of Variance Explained")
+
+
+======
+
+plot(df$Total_Stops,
+ df$Price,
+  xlab = 'Total Stops',
+  ylab = 'Price',
+  main = 'Scatter Plot')
+
+=======
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+
+# Group by airline and calculate the sum of prices
+airline_price_data <- df %>%
+  group_by(Airline) %>%
+  summarise(Total_Price = sum(Price)) %>%
+  arrange(desc(Total_Price))
+airline_price_data
+
+
+========
+
+# Create a bar plot
+ggplot(airline_price_data, aes(x = Airline, y = Total_Price)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Total Price by Airline", x = "Airline", y = "Total Price") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels if needed
+
+
+
+========
+
+# Create a KDE plot
+ggplot(df, aes(x = Price, fill = Airline)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Price Distribution by Airline", x = "Price", y = "Density") +
+  theme_minimal()
